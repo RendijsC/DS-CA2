@@ -1,3 +1,4 @@
+/* eslint-disable import/extensions, import/no-absolute-path */
 import { SQSHandler } from "aws-lambda";
 import {
   GetObjectCommand,
