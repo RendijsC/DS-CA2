@@ -33,7 +33,7 @@ export const handler: SQSHandler = async (event) => {
 
         if (!srcKey.match(/\.(jpeg|png)$/i)) {
           console.warn(`Unsupported file type: ${srcKey}`);
-          continue;
+          throw new Error(`Unsupported file type: ${srcKey}`);
         }
 
         let origimage = null;
