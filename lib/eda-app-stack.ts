@@ -73,6 +73,17 @@ export class EDAAppStack extends cdk.Stack {
     }
   );
 
+
+  // Lambda Function for Updating Table
+  const updateTableFn = new lambdanode.NodejsFunction(this, "UpdateTableFn", {
+    runtime: lambda.Runtime.NODEJS_18_X,
+    entry: `${__dirname}/../lambdas/updateTable.ts`,
+    environment: {
+      REGION: "eu-west-1",
+      TABLE_NAME: imageTable.tableName,
+    },
+  });
+
   const rejectionMailerFn = new lambdanode.NodejsFunction(this, "RejectionMailerFn", {
     runtime: lambda.Runtime.NODEJS_16_X,
     memorySize: 1024,
@@ -90,11 +101,21 @@ export class EDAAppStack extends cdk.Stack {
   // S3 --> SQS
   imagesBucket.addEventNotification(
     s3.EventType.OBJECT_CREATED,
-    new s3n.SnsDestination(newImageTopic)  // Changed
+    new s3n.SnsDestination(newImageTopic)
 );
 
 newImageTopic.addSubscription(
   new subs.SqsSubscription(imageProcessQueue)
+);
+
+newImageTopic.addSubscription(
+  new subs.LambdaSubscription(updateTableFn, {
+    filterPolicy: {
+      metadata_type: sns.SubscriptionFilter.stringFilter({
+        allowlist: ["Caption", "Date", "Photographer"],
+      }),
+    },
+  })
 );
 
  // SQS --> Lambda
@@ -117,6 +138,7 @@ newImageTopic.addSubscription(
   mailerFn.addEventSource(newImageMailEventSource);
   newImageTopic.addSubscription(new subs.SqsSubscription(mailerQ));
   rejectionMailerFn.addEventSource(dlqEventSource);
+  
 
   mailerFn.addToRolePolicy(
     new iam.PolicyStatement({
@@ -147,6 +169,7 @@ newImageTopic.addSubscription(
 
   imagesBucket.grantRead(processImageFn);
   imageTable.grantWriteData(processImageFn);
+  imageTable.grantWriteData(updateTableFn);
   // Output
   
   new cdk.CfnOutput(this, "bucketName", {
