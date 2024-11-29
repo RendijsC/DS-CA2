@@ -11,6 +11,10 @@ import * as iam from "aws-cdk-lib/aws-iam";
 
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 
+import { StreamViewType } from "aws-cdk-lib/aws-dynamodb";
+import {  DynamoEventSource } from "aws-cdk-lib/aws-lambda-event-sources";
+import { StartingPosition } from "aws-cdk-lib/aws-lambda";
+
 import { Construct } from "constructs";
 // import * as sqs from 'aws-cdk-lib/aws-sqs';
 
@@ -29,7 +33,8 @@ export class EDAAppStack extends cdk.Stack {
       partitionKey: { name: "imageName", type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST, 
       removalPolicy: cdk.RemovalPolicy.DESTROY,
-      tableName: "Images"
+      tableName: "Images",
+      stream: dynamodb.StreamViewType.NEW_IMAGE
     });
 
 
@@ -104,6 +109,11 @@ export class EDAAppStack extends cdk.Stack {
     new s3n.SnsDestination(newImageTopic)
 );
 
+imagesBucket.addEventNotification(
+  s3.EventType.OBJECT_REMOVED,
+  new s3n.SnsDestination(newImageTopic)  // Changed
+);
+
 newImageTopic.addSubscription(
   new subs.SqsSubscription(imageProcessQueue)
 );
@@ -124,18 +134,19 @@ newImageTopic.addSubscription(
     maxBatchingWindow: cdk.Duration.seconds(5),
   });
 
-  const newImageMailEventSource = new events.SqsEventSource(mailerQ, {
-    batchSize: 5,
-    maxBatchingWindow: cdk.Duration.seconds(5),
-  });
-
   const dlqEventSource = new events.SqsEventSource(deadLetterQueue, {
     batchSize: 5,
     maxBatchingWindow: cdk.Duration.seconds(5),
   });
 
+  mailerFn.addEventSource(
+    new events.DynamoEventSource(imageTable, {
+      startingPosition: StartingPosition.LATEST,
+      batchSize: 5,
+    })
+  );
+
   processImageFn.addEventSource(newImageEventSource);
-  mailerFn.addEventSource(newImageMailEventSource);
   newImageTopic.addSubscription(new subs.SqsSubscription(mailerQ));
   rejectionMailerFn.addEventSource(dlqEventSource);
   
@@ -164,7 +175,6 @@ newImageTopic.addSubscription(
     })
   );
 
-
   // Permissions
 
   imagesBucket.grantRead(processImageFn);
@@ -175,5 +185,11 @@ newImageTopic.addSubscription(
   new cdk.CfnOutput(this, "bucketName", {
     value: imagesBucket.bucketName,
   });
+
+  new cdk.CfnOutput(this, "topicARN", {
+    value: newImageTopic.topicArn,
+  });
+
+
   }
 }

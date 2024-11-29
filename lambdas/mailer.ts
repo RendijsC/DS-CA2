@@ -1,4 +1,4 @@
-import { SQSHandler } from "aws-lambda";
+import { DynamoDBStreamHandler, SQSHandler } from "aws-lambda";
 import { SES_EMAIL_FROM, SES_EMAIL_TO, SES_REGION } from "../env";
 import {
   SESClient,
@@ -20,24 +20,15 @@ type ContactDetails = {
 
 const client = new SESClient({ region: SES_REGION});
 
-export const handler: SQSHandler = async (event: any) => {
+export const handler: DynamoDBStreamHandler = async (event) => {
   console.log("Event ", JSON.stringify(event));
   for (const record of event.Records) {
-    const recordBody = JSON.parse(record.body);
-    const snsMessage = JSON.parse(recordBody.Message);
-
-    if (snsMessage.Records) {
-      console.log("Record body ", JSON.stringify(snsMessage));
-      for (const messageRecord of snsMessage.Records) {
-        const s3e = messageRecord.s3;
-        const srcBucket = s3e.bucket.name;
-        // Object key may have spaces or unicode non-ASCII characters.
-        const srcKey = decodeURIComponent(s3e.object.key.replace(/\+/g, " "));
+    if (record.eventName === "INSERT") {
         try {
           const { name, email, message }: ContactDetails = {
             name: "The Photo Album",
             email: SES_EMAIL_FROM,
-            message: `We received your Image. Its URL is s3://${srcBucket}/${srcKey}`,
+            message: `The image has been added to the table`,
           };
           const params = sendEmailParams({ name, email, message });
           await client.send(new SendEmailCommand(params));
@@ -48,7 +39,6 @@ export const handler: SQSHandler = async (event: any) => {
       }
     }
   }
-};
 
 function sendEmailParams({ name, email, message }: ContactDetails) {
   const parameters: SendEmailCommandInput = {
