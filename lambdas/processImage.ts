@@ -31,22 +31,20 @@ export const handler: SQSHandler = async (event) => {
         const srcKey = decodeURIComponent(s3e.object.key.replace(/\+/g, " "));
         const eventName = messageRecord.eventName;
 
+        if (!srcKey.match(/\.(jpeg|png)$/i)) {
+          console.warn(`Unsupported file type: ${srcKey}`);
+          throw new Error(`Unsupported file type: ${srcKey}`);
+        }
+
         try {
           if (eventName.startsWith("ObjectCreated")) {
             console.log(`Processing image upload: ${srcKey}`);
-            
-            if (!srcKey.match(/\.(jpeg|png)$/i)) {
-              console.warn(`Unsupported file type: ${srcKey}`);
-              throw new Error(`Unsupported file type: ${srcKey}`);
-            }
 
             // Download the image from the S3 source bucket
             const params: GetObjectCommandInput = {
               Bucket: srcBucket,
               Key: srcKey,
             };
-
-            const origimage = await s3.send(new GetObjectCommand(params));
             
             const dynamoParams = {
               TableName: imageTableName,
@@ -56,8 +54,6 @@ export const handler: SQSHandler = async (event) => {
             };
             await dynamodb.send(new PutItemCommand(dynamoParams));
             console.log(`Saved valid image: ${srcKey} to DynamoDB`);
-
-            
 
             
           } else if (eventName.startsWith("ObjectRemoved")) {
